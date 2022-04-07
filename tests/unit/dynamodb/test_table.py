@@ -227,6 +227,59 @@ class BaseTransformationTest(unittest.TestCase):
             [first_batch, second_batch, third_batch]
         )
 
+    def test_never_lose_any_records(self):
+        # Suppose the server sends backs a response that indicates that
+        # all the items were unprocessed, but the next request they all succeed.
+        self.client.batch_write_item.side_effect = [
+            {
+                'UnprocessedItems': {
+                    self.table_name: [
+                        {'PutRequest': {'Item': {'Hash': 'foo1'}}},
+                        {'PutRequest': {'Item': {'Hash': 'foo2'}}},
+                    ],
+                },
+            },
+            {'UnprocessedItems': {}},
+            {'UnprocessedItems': {}},
+        ]
+        with BatchWriter(self.table_name, self.client, flush_amount=2) as b:
+            b.put_item(Item={'Hash': 'foo1'})
+            b.put_item(Item={'Hash': 'foo2'})
+            b.put_item(Item={'Hash': 'foo3'})
+            b.put_item(Item={'Hash': 'foo4'})
+
+        # First attempt at the first batch.
+        first_batch = {
+            'RequestItems': {
+                self.table_name: [
+                    {'PutRequest': {'Item': {'Hash': 'foo1'}}},
+                    {'PutRequest': {'Item': {'Hash': 'foo2'}}},
+                ]
+            }
+        }
+        # Entire batch is retried.
+        second_batch = {
+            'RequestItems': {
+                self.table_name: [
+                    {'PutRequest': {'Item': {'Hash': 'foo1'}}},
+                    {'PutRequest': {'Item': {'Hash': 'foo2'}}},
+                ]
+            }
+        }
+        # None are left over from the first batch, so the next batch is the
+        # next 2 items.
+        third_batch = {
+            'RequestItems': {
+                self.table_name: [
+                    {'PutRequest': {'Item': {'Hash': 'foo3'}}},
+                    {'PutRequest': {'Item': {'Hash': 'foo4'}}},
+                ]
+            }
+        }
+        self.assert_batch_write_calls_are(
+            [first_batch, second_batch, third_batch]
+        )
+
     def test_repeated_flushing_on_exit(self):
         # We're going to simulate unprocessed_items
         # returning multiple unprocessed items across calls.

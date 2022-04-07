@@ -150,8 +150,6 @@ class BatchWriter:
             # Any unprocessed_items are immediately added to the
             # next batch we send.
             self._items_buffer.extend(unprocessed_items[self._table_name])
-        else:
-            self._items_buffer = []
         logger.debug(
             "Batch write sent %s, unprocessed: %s",
             len(items_to_send),
